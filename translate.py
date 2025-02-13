@@ -5,6 +5,7 @@ import speech_recognition as sr
 import time
 import webrtcvad  # pip install webrtcvad
 from faster_whisper import WhisperModel
+from transformers import pipeline
 
 def is_speech_present(raw_audio, sample_rate=16000, frame_duration_ms=30, speech_ratio_threshold=0.5):
     """
@@ -14,7 +15,7 @@ def is_speech_present(raw_audio, sample_rate=16000, frame_duration_ms=30, speech
     - frame_duration_ms: duration of each frame in ms (typically 20-30 ms).
     - speech_ratio_threshold: minimum fraction of frames that must be speech.
     """
-    vad = webrtcvad.Vad(2)  # mode 2: moderately aggressive
+    vad = webrtcvad.Vad(1)  # mode 2: moderately aggressive
     frame_length = int(sample_rate * (frame_duration_ms / 1000.0) * 2)  # 2 bytes per sample (16-bit)
     frames = [
         raw_audio[i:i+frame_length]
@@ -30,7 +31,7 @@ def is_speech_present(raw_audio, sample_rate=16000, frame_duration_ms=30, speech
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Continuously record utterances and transcribe them, with optional hotwords from a file."
+        description="Continuously record utterances, transcribe them, and translate Czech to English."
     )
     parser.add_argument("--model", default="medium",
                         choices=["tiny", "base", "small", "medium", "large-v1", "large-v2", "large-v3"],
@@ -43,7 +44,6 @@ def main():
                         help="Duration (in seconds) for ambient noise calibration")
     parser.add_argument("--hotwords_file", default=None,
                         help="Path to a file containing hotwords (one per line) to bias the transcription")
-    # Default microphone prefix
     parser.add_argument("--default_microphone", default="Jabra Speak 710: USB Audio",
                         help="(Optional) Microphone name prefix to use on Linux. Leave empty to use system default.")
     args = parser.parse_args()
@@ -65,7 +65,7 @@ def main():
     recognizer.dynamic_energy_threshold = False
     recognizer.pause_threshold = 0.5  # seconds after speech ends before recording stops
 
-    # Microphone selection based on name prefix
+    # Microphone selection
     mic = None
     mic_names = sr.Microphone.list_microphone_names()
     if args.default_microphone:
@@ -91,17 +91,18 @@ def main():
         recognizer.adjust_for_ambient_noise(source, duration=args.mic_duration_calib)
     print(f"Calibration complete. New energy threshold is: {recognizer.energy_threshold}\n")
 
-    # Choose model name based on language and model selection
-    if args.language.lower() == "en" and args.model != "large":
-        model_name = f"{args.model}.en"
-    else:
-        model_name = args.model
-    print(f"Loading faster-whisper model '{model_name}' ...")
+    # Load Faster Whisper
+    model_name = args.model
+    print(f"Loading Faster Whisper model '{model_name}' ...")
     model = WhisperModel(model_name, download_root=f"/tmp/{model_name}", device="cuda")
     print("Model loaded.\n")
+
+    # Load Czech-to-English Translation Model
+    print("Loading translation model (Helsinki-NLP/opus-mt-cs-en) ...")
+    translator = pipeline("translation", model="Helsinki-NLP/opus-mt-cs-en")
+    print("Translation model loaded.\n")
     
-    print("Enter utterances continuously. After each utterance, the system will measure timing and transcribe the entire utterance.")
-    print("Press Ctrl+C to exit.\n")
+    print("Listening for speech. Press Ctrl+C to exit.\n")
     
     try:
         while True:
@@ -120,19 +121,33 @@ def main():
             np_audio = np.frombuffer(raw_audio, dtype=np.int16).astype(np.float32) / 32768.0
             
             print("Transcribing utterance...")
+            start_transcribe = time.time()
             segments, _ = model.transcribe(np_audio, language=args.language, hotwords=hotwords_str)
-            transcribe_end = time.time()  # Time when transcription finished
-            
-            # Calculate transcription time (from speech end)
-            speech_end_time = capture_end - recognizer.pause_threshold
-            transcription_time = (transcribe_end - speech_end_time) * 1000  # in ms
-            
-            transcription = " ".join(seg.text for seg in segments).strip()
-            
-            print("\n--- Utterance Transcription ---")
-            print(transcription)
+            end_transcribe = time.time()
+
+            # Combine segments into a single Czech string
+            czech_text = " ".join(seg.text for seg in segments).strip()
+            transcribe_time_ms = (end_transcribe - start_transcribe) * 1000
+
+            print("\n--- Czech Transcription ---")
+            print(czech_text)
             print("--------------------------------")
-            print(f"Transcription time (from speech end): {transcription_time:.2f} ms\n")
+            print(f"Transcription time: {transcribe_time_ms:.2f} ms")
+
+            # --- Translate to English ---
+            if czech_text:
+                print("\nTranslating to English...")
+                start_translate = time.time()
+                translation_result = translator(czech_text)
+                english_text = translation_result[0]["translation_text"]
+                end_translate = time.time()
+                translate_time_ms = (end_translate - start_translate) * 1000
+
+                print("\n--- English Translation ---")
+                print(english_text)
+                print("--------------------------------")
+                print(f"Translation time: {translate_time_ms:.2f} ms\n")
+
     except KeyboardInterrupt:
         print("\nExiting...")
 
