@@ -1,6 +1,0 @@
-přitlač
-posuň
-stop
-start
-doleva
-doprava
