@@ -4,3 +4,6 @@ redundant_code/
 tmp/
 cuda-keyring_1.1-1_all.deb
 unsloth_compiled_cache/
+.env
+outputs/
+wandb/

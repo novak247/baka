@@ -214,25 +214,28 @@ def cmd_automatic_massage():
 # ------------------------------
 def generate_command_sequence():
     """
-    Randomly chooses between 1 and 3 commands from the available command generators.
+    Randomly chooses between 1 and 5 commands from the available command generators.
     Returns a tuple of (instruction_text, pipeline_list).
     """
-    # Decide the number of commands: 50% chance for 1, 30% for 2, 20% for 3.
-    num_commands = random.choices([1, 2, 3], weights=[0.5, 0.3, 0.2])[0]
+    # Define probabilities for choosing 1, 2, 3, 4, or 5 commands.
+    num_commands = random.choices([1, 2, 3, 4, 5], weights=[0.35, 0.30, 0.2, 0.1, 0.05])[0]
     command_texts = []
     pipeline = []
-    # Choose random commands and accumulate their text and pipeline.
+    # List of available command generator functions.
+    cmd_funcs = [
+        cmd_start, cmd_stop, cmd_home, cmd_detect,
+        cmd_move, cmd_change_force_relative, cmd_change_force_absolute, cmd_automatic_massage
+    ]
+    # Generate the commands.
     for _ in range(num_commands):
-        cmd_func = random.choice([
-            cmd_start, cmd_stop, cmd_home, cmd_detect,
-            cmd_move, cmd_change_force_relative, cmd_change_force_absolute, cmd_automatic_massage
-        ])
+        cmd_func = random.choice(cmd_funcs)
         text, cmd_pipeline = cmd_func()
         command_texts.append(text)
         pipeline.extend(cmd_pipeline)
     # Join the command texts with a connector so the instruction reads naturally.
     instruction_text = "; then ".join(command_texts)
     return instruction_text, pipeline
+
 
 # ------------------------------
 # Dataset Generation
